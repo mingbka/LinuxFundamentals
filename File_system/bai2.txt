@@ -1,0 +1,6 @@
+Giả sử biến file đã được khởi tạo trước đó
+fd1 sử dụng để mở biến file để đọc và ghi, tạo file nếu chưa có và nếu đã tồn tại thì xoá hết nội dung bên trong
+fd3 để mở biến file để đọc và ghi
+Hàm write(fd1, "Hello,", 6); ghi vào file nội dung là Hello,
+Hàm write(fd2, "world", 6); và lseek(fd2, 0, SEEK_SET); xảy ra lỗi do fd2 chưa được khởi tạo
+Sau khi thực hiện 2 hàm cuối cùng ta được file có nội dung là Hello,HELLO,Gidday

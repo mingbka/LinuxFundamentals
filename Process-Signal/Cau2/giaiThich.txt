@@ -1,0 +1,6 @@
+1. Hàm sẽ tìm chương trình được yêu cầu trong thư mục /usr/bin/ls
+2. Nếu chương trình tồn tại và có quyền thực thi, kernel sẽ xoá toàn bộ mã lệnh, dữ liệu, vùng nhớ của 
+tiến trình hiện tại, sau đó nạp chương trình mới vào bộ nhớ
+3. Tiến trình bắt đầu chạy từ main(), 
+    nếu execl() thành công, chương trình cũ sẽ không bao giờ được chạy
+    nếu execl() thất bại, nó trả về -1 và chương trình cũ tiếp tục chạy
