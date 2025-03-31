@@ -4,116 +4,196 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <sys/socket.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/select.h>
 
-#define MAXDATASIZE 1024
-#define LISTEN_BACKLOG 5
+#define MAX_DATASIZE 1024
+#define MAX_CONNECTION 10
 
-void print_help() {
+typedef struct {
+    int socket;
+    struct sockaddr_in addr;
+} Connection;
+
+Connection connections[MAX_CONNECTION];
+int connection_count = 0;
+
+void print_help(){
     printf("Available commands:\n");
     printf("help - Show available commands\n");
     printf("myip - Display this machine's IP\n");
-    printf("myport - Show the port this process is using\n");
-    printf("send <message> - Send a message\n");
-    printf("exit - Close connection and terminate\n");
+    printf("myport - Show the port this process is listening on\n");
+    printf("connect <IP> <port> - Connect to a server\n");
+    printf("list - Show all active connections\n");
+    printf("terminate <id> - Terminate a connection\n");
+    printf("send <id> <message> - Send a message to a connection\n");
+    printf("exit - Close all connections and terminate\n");
 }
 
-void get_my_ip() {
-    char host[256];
-    struct hostent *host_entry;
-    if (gethostname(host, sizeof(host)) == -1) {
-        perror("gethostname");
-        return;
+void show_list(){
+    printf("Active connections:\n");
+    for(int i=0; i<connection_count; i++){
+        // ham inet_ntoa <=> inet_ntop cho IPv4
+        printf("%d: %s %d\n", i + 1, inet_ntoa(connections[i].addr.sin_addr), ntohs(connections[i].addr.sin_port));
     }
-    host_entry = gethostbyname(host);
-    if (host_entry == NULL) {
-        perror("gethostbyname");
-        return;
-    }
-    printf("My IP: %s\n", inet_ntoa(*((struct in_addr*)host_entry->h_addr_list[0])));
 }
 
-int main(int argc, char *argv[]) {
-    if (argc < 2 || argc > 3) {
-        fprintf(stderr, "Usage: %s <port> (server) or %s <IP> <port> (client)\n", argv[0], argv[0]);
-        return 1;
+void terminate_connection(int id){
+    if (id < 1 || id > connection_count) {
+        printf("Invalid connection ID\n");
+        return;
+    }
+    close(connections[id - 1].socket);
+    for (int i = id - 1; i < connection_count - 1; i++) {
+        connections[i] = connections[i + 1];
+    }
+    connection_count--;
+    printf("Connection %d terminated\n", id);
+}
+
+void send_message(int id, char *message){
+    if (id < 1 || id > connection_count) {
+        printf("Invalid connection ID\n");
+        return;
+    }
+    if (send(connections[id - 1].socket, message, strlen(message), 0) == -1) {
+        perror("send");
+    } else {
+        printf("Message sent to %d\n", id);
+    }
+}
+
+void close_all(){
+    for(int i=0; i<connection_count; i++){
+        close(connections[i+1].socket);
+    }
+    printf("Exiting...\n");
+}
+
+int main(int argc, char *argv[]){
+    if(argc!=2) {
+        printf("Usage: %s <port number>\n", argv[0]);
+        exit(EXIT_FAILURE);
     }
 
+    int port = atoi(argv[1]);
+    if (port <= 0 || port > 65535) {
+        fprintf(stderr, "Invalid port number. Must be between 1 and 65535.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Handle command
+    char command[20];
     int sockfd;
-    struct sockaddr_in addr;
-    char buffer[MAXDATASIZE];
+    struct sockaddr_in server_addr;
+    fd_set read_fds;
+    char buffer[MAX_DATASIZE];
 
-    // Server mode
-    if (argc == 2) { 
-        int port = atoi(argv[1]);
-        sockfd = socket(AF_INET, SOCK_STREAM, 0);
-        if (sockfd == -1) {
-            perror("socket");
-            return 1;
+    // Create socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Create server address
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+
+    // Bind socket with ip & port
+    if (bind(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+        perror("bind");
+        exit(EXIT_FAILURE);
+    }
+
+    // Listen from client
+    if (listen(sockfd, MAX_CONNECTION) == -1) {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Starting chat application on port %d...\n", port);
+
+    while(1){
+        fgets(command, sizeof(command), stdin);
+        if(strcmp(command, "help")==0){
+            print_help();
+        } else if(strcmp(command, "myip")==0){
+
+        } else if(strcmp(command, "myport")==0){
+            printf("Listening on port: %d", port);
+        } 
+        
+        // Handle "connect" command
+        else if(strncmp(command, "connect", 7)==0){
+            char ip[20];
+            int port;
+            if (sscanf(command, "connect %s %d", ip, &port) != 2) {
+                printf("Usage: connect <IP> <port>\n");
+                continue;
+            }
+            int new_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+            if (new_sockfd == -1) {
+                perror("socket");
+                continue;
+            }
+
+            server_addr.sin_family = AF_INET;
+            server_addr.sin_port = htons(port);
+            // Assign ip address to server_addr.sin_addr
+            inet_pton(AF_INET, ip, &server_addr.sin_addr); 
+
+            if (connect(new_sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+                perror("connect");
+                close(new_sockfd);
+                continue;
+            }
+
+            connections[connection_count].socket = new_sockfd;
+            connections[connection_count].addr = server_addr;
+            connection_count++;
+
+            printf("Connected to %s:%d\n", ip, port);
+        } 
+
+        else if(strcmp(command, "list")==0){
+            show_list();
         }
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = INADDR_ANY;
-        addr.sin_port = htons(port);
 
-        if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-            perror("bind");
-            return 1;
+        else if(strncmp(command, "terminate", 9)==0){
+            int id;
+            if (sscanf(command, "terminate %d", &id)==1){
+                terminate_connection(id);
+            } else{
+                printf("Usage: terminate <connection id>");
+            }
+            
         }
-        listen(sockfd, LISTEN_BACKLOG);
-        printf("Server listening on port %d...\n", port);
 
-        int client_fd;
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        client_fd = accept(sockfd, (struct sockaddr*)&client_addr, &client_len);
-        if (client_fd == -1) {
-            perror("accept");
-            return 1;
-        }
-        printf("Client connected: %s\n", inet_ntoa(client_addr.sin_addr));
-
-        while (1) {
-            memset(buffer, 0, MAXDATASIZE);
-            int recv_size = recv(client_fd, buffer, MAXDATASIZE, 0);
-            if (recv_size <= 0) break;
-            printf("Received: %s\n", buffer);
-        }
-        close(client_fd);
-
-    // Client mode
-    } else { 
-        const char *ip = argv[1];
-        int port = atoi(argv[2]);
-        sockfd = socket(AF_INET, SOCK_STREAM, 0);
-        if (sockfd == -1) {
-            perror("socket");
-            return 1;
-        }
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        inet_pton(AF_INET, ip, &addr.sin_addr);
-
-        if (connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-            perror("connect");
-            return 1;
-        }
-        printf("Connected to server %s:%d\n", ip, port);
-
-        while (1) {
-            printf("chat> ");
-            fgets(buffer, MAXDATASIZE, stdin);
-            buffer[strcspn(buffer, "\n")] = 0;
-
-            if (strcmp(buffer, "help") == 0) {
-                print_help();
-            } else if (strcmp(buffer, "myip") == 0) {
-                get_my_ip();
-            } else if (strcmp(buffer, "exit") == 0) {
-                break;
-            } else {
-                send(sockfd, buffer, strlen(buffer), 0);
+        // Handle "send" command
+        else if(strncmp(command, "send", 4)==0){
+            int id;
+            char message[MAX_DATASIZE];
+            if(sscanf(command, "send %d %s", &id, message)==2){
+                send_message(id, message);
+            } else{
+                printf("Usage: send <id> <message>");
             }
         }
-        close(sockfd);
+        
+        else if(strcmp(command, "exit")==0){
+            close_all();
+            break;
+        }
+        
+        else{
+            printf("Invalid command. Type 'help' to see available commands\n");
+        }
     }
     return 0;
 }
