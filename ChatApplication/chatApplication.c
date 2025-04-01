@@ -12,8 +12,10 @@
 #include <sys/select.h>
 
 #define MAX_DATASIZE 1024
-#define MAX_CONNECTION 10
+#define MAX_CONNECTION 5
+#define LISTEN_BACKLOG 5
 
+// Manage number of server that you connected
 typedef struct {
     int socket;
     struct sockaddr_in addr;
@@ -69,9 +71,27 @@ void send_message(int id, char *message){
 
 void close_all(){
     for(int i=0; i<connection_count; i++){
-        close(connections[i+1].socket);
+        close(connections[i].socket);
     }
     printf("Exiting...\n");
+}
+
+void *handle_connection(void *arg){
+    int server_socket = *(int *)arg;
+    struct sockaddr_in client_addr;
+    socklen_t len = sizeof(client_addr);
+
+    while (1) {
+        int new_socket_fd = accept(server_socket, (struct sockaddr*)&client_addr, &len);
+        if (new_socket_fd == -1) {
+            perror("Error accepting");
+            continue;
+        }
+
+        printf("New connection accepted from %s:%d\n",
+               inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+    }
+    return NULL;
 }
 
 int main(int argc, char *argv[]){
@@ -87,11 +107,13 @@ int main(int argc, char *argv[]){
     }
 
     // Handle command
-    char command[20];
+    char command[50];
     int sockfd;
     struct sockaddr_in server_addr;
     fd_set read_fds;
     char buffer[MAX_DATASIZE];
+
+    memset(&server_addr, 0, sizeof(struct sockaddr_in));
 
     // Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -112,7 +134,7 @@ int main(int argc, char *argv[]){
     }
 
     // Listen from client
-    if (listen(sockfd, MAX_CONNECTION) == -1) {
+    if (listen(sockfd, LISTEN_BACKLOG) == -1) {
         perror("listen");
         exit(EXIT_FAILURE);
     }
@@ -120,18 +142,19 @@ int main(int argc, char *argv[]){
     printf("Starting chat application on port %d...\n", port);
 
     while(1){
+        printf("chat> ");
         fgets(command, sizeof(command), stdin);
-        if(strcmp(command, "help")==0){
+        if(strncmp(command, "help", 4)==0){
             print_help();
         } else if(strcmp(command, "myip")==0){
 
-        } else if(strcmp(command, "myport")==0){
-            printf("Listening on port: %d", port);
+        } else if(strncmp(command, "myport", 6)==0){
+            printf("Listening on port: %d\n", port);
         } 
         
         // Handle "connect" command
         else if(strncmp(command, "connect", 7)==0){
-            char ip[20];
+            char ip[30];
             int port;
             if (sscanf(command, "connect %s %d", ip, &port) != 2) {
                 printf("Usage: connect <IP> <port>\n");
@@ -161,7 +184,7 @@ int main(int argc, char *argv[]){
             printf("Connected to %s:%d\n", ip, port);
         } 
 
-        else if(strcmp(command, "list")==0){
+        else if(strncmp(command, "list", 4)==0){
             show_list();
         }
 
@@ -170,19 +193,19 @@ int main(int argc, char *argv[]){
             if (sscanf(command, "terminate %d", &id)==1){
                 terminate_connection(id);
             } else{
-                printf("Usage: terminate <connection id>");
+                printf("Usage: terminate <connection id>\n");
             }
             
         }
 
         // Handle "send" command
-        else if(strncmp(command, "send", 4)==0){
+        else if (strncmp(command, "send", 4) == 0) {
             int id;
             char message[MAX_DATASIZE];
-            if(sscanf(command, "send %d %s", &id, message)==2){
+            if (sscanf(command, "send %d %[^\n]", &id, message) == 2) {
                 send_message(id, message);
-            } else{
-                printf("Usage: send <id> <message>");
+            } else {
+                printf("Usage: send <id> <message>\n");
             }
         }
         
