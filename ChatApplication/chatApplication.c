@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/select.h>
+#include <pthread.h>
 
 #define MAX_DATASIZE 1024
 #define MAX_CONNECTION 5
@@ -76,7 +77,7 @@ void close_all(){
     printf("Exiting...\n");
 }
 
-void *handle_connection(void *arg){
+void *handle_accept(void *arg){
     int server_socket = *(int *)arg;
     struct sockaddr_in client_addr;
     socklen_t len = sizeof(client_addr);
@@ -138,6 +139,10 @@ int main(int argc, char *argv[]){
         perror("listen");
         exit(EXIT_FAILURE);
     }
+
+    pthread_t accept_thread;
+    pthread_create(&accept_thread, NULL, handle_accept, (void *)&sockfd);
+    pthread_detach(accept_thread);
 
     printf("Starting chat application on port %d...\n", port);
 
