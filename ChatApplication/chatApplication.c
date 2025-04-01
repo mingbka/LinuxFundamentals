@@ -92,6 +92,8 @@ void *handle_accept(void *arg){
         printf("New connection accepted from %s:%d\n",
                inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
     }
+
+    
     return NULL;
 }
 
@@ -160,6 +162,8 @@ int main(int argc, char *argv[]){
         // Handle "connect" command
         else if(strncmp(command, "connect", 7)==0){
             char ip[30];
+            struct sockaddr_in connect_server_addr;
+            memset(&connect_server_addr, '0',sizeof(connect_server_addr));
             int port;
             if (sscanf(command, "connect %s %d", ip, &port) != 2) {
                 printf("Usage: connect <IP> <port>\n");
@@ -173,18 +177,23 @@ int main(int argc, char *argv[]){
 
             server_addr.sin_family = AF_INET;
             server_addr.sin_port = htons(port);
-            // Assign ip address to server_addr.sin_addr
-            inet_pton(AF_INET, ip, &server_addr.sin_addr); 
+            // Assign ip address to connect.server_addr.sin_addr
+            inet_pton(AF_INET, ip, &connect_server_addr.sin_addr); 
 
-            if (connect(new_sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+            if (connect(new_sockfd, (struct sockaddr*)&connect_server_addr, sizeof(connect_server_addr)) == -1) {
                 perror("connect");
                 close(new_sockfd);
                 continue;
             }
 
-            connections[connection_count].socket = new_sockfd;
-            connections[connection_count].addr = server_addr;
-            connection_count++;
+            if (connection_count < MAX_CONNECTION) {
+                connections[connection_count].socket = new_sockfd;
+                connections[connection_count].addr = server_addr;
+                connection_count++;
+            } else {
+                printf("Connection limit reached. Closing connection.\n");
+                close(new_sockfd);
+            }
 
             printf("Connected to %s:%d\n", ip, port);
         } 
