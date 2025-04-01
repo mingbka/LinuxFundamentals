@@ -175,8 +175,8 @@ int main(int argc, char *argv[]){
                 continue;
             }
 
-            server_addr.sin_family = AF_INET;
-            server_addr.sin_port = htons(port);
+            connect_server_addr.sin_family = AF_INET;
+            connect_server_addr.sin_port = htons(port);
             // Assign ip address to connect.server_addr.sin_addr
             inet_pton(AF_INET, ip, &connect_server_addr.sin_addr); 
 
@@ -188,7 +188,7 @@ int main(int argc, char *argv[]){
 
             if (connection_count < MAX_CONNECTION) {
                 connections[connection_count].socket = new_sockfd;
-                connections[connection_count].addr = server_addr;
+                connections[connection_count].addr = connect_server_addr;
                 connection_count++;
             } else {
                 printf("Connection limit reached. Closing connection.\n");
