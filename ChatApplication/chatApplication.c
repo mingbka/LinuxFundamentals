@@ -66,7 +66,7 @@ void send_message(int id, char *message){
     if (send(connections[id - 1].socket, message, strlen(message), 0) == -1) {
         perror("send");
     } else {
-        printf("Message sent to %d\n", id);
+        printf("Message sent to server number %d\n", id);
     }
 }
 
