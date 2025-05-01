@@ -93,7 +93,6 @@ void *handle_accept(void *arg){
                inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
     }
 
-    
     return NULL;
 }
 
